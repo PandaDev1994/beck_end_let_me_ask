@@ -1,5 +1,5 @@
 import { fastify } from "fastify";
-import { sql } from "./db/concection.ts";
+// import { sql } from "./db/concection.ts";
 import {
   serializerCompiler,
   validatorCompiler,
@@ -8,6 +8,9 @@ import {
 import { fastifyCors } from "@fastify/cors";
 import { env } from "./env.ts";
 import { getRoomsRoute } from "./http/routes/get-rooms.ts";
+import { createRoomsRoute } from "./http/routes/create-rooms.ts";
+import { getRoomQuestionsRoute } from "./http/routes/get-room-questions.ts";
+import { createQuestionsRoute } from "./http/routes/create-questions.ts";
 
 const app = fastify().withTypeProvider<ZodTypeProvider>();
 
@@ -23,5 +26,8 @@ app.get("/health", () => {
 });
 
 app.register(getRoomsRoute);
+app.register(createRoomsRoute);
+app.register(getRoomQuestionsRoute);
+app.register(createQuestionsRoute);
 
 app.listen({ port: env.PORT });
