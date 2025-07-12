@@ -2,6 +2,8 @@ import type { FastifyPluginCallbackZod } from "fastify-type-provider-zod";
 import { z } from "zod/v4";
 import { db } from "../../db/concection.ts";
 import { schema } from "../../db/schema/index.ts";
+import { generateAnswer, generateEmbedding } from "../../services/gemini.ts";
+import { and, eq, sql } from "drizzle-orm";
 
 export const createQuestionsRoute: FastifyPluginCallbackZod = (app) => {
   app.post(
@@ -20,11 +22,42 @@ export const createQuestionsRoute: FastifyPluginCallbackZod = (app) => {
       const { roomId } = request.params;
       const { question } = request.body;
 
+      const embedding = await generateEmbedding(question);
+
+      const embeddingsAsString = `[${embedding.join(",")}]`;
+
+      const chunks = await db
+        .select({
+          id: schema.audioChunks.id,
+          transcription: schema.audioChunks.transcription,
+          similarity: sql<number>`1 - (${schema.audioChunks.embedding} <=> ${embeddingsAsString}::vector)`,
+        })
+        .from(schema.audioChunks)
+        .where(
+          and(
+            eq(schema.audioChunks.roomId, roomId),
+            sql`1 - (${schema.audioChunks.embedding} <=> ${embeddingsAsString}::vector) > 0.7`
+          )
+        )
+        .orderBy(
+          sql`${schema.audioChunks.embedding} <=> ${embeddingsAsString}::vector`
+        )
+        .limit(3);
+
+      let answer: string | null = null;
+
+      if (chunks.length > 0) {
+        const transcriptions = chunks.map((chunk) => chunk.transcription);
+
+        answer = await generateAnswer(question, transcriptions);
+      }
+
       const result = await db
         .insert(schema.questions)
         .values({
           roomId,
           question,
+          answer,
         })
         .returning();
 
@@ -34,7 +67,9 @@ export const createQuestionsRoute: FastifyPluginCallbackZod = (app) => {
         throw new Error("Failed to create room");
       }
 
-      return reply.status(201).send({ questionId: insertedQuestion.id });
+      return reply
+        .status(201)
+        .send({ questionId: insertedQuestion.id, answer });
     }
   );
 };
